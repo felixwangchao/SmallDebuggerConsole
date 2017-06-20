@@ -16,6 +16,13 @@ void editMemoryByte(LPVOID addr, byte b);
 void editMemoryDword(LPVOID, DWORD);
 void displayMemory(LPVOID addr, int mode);
 void disassembly(LPVOID addr, int nNum = 7);
+
+// 单步步过
+void IsCall(DWORD & nextCall);
+
+// 符号操作
+SIZE_T GetSymAddress(const char* pszName);
+BOOL GetSymName(SIZE_T nAddress, string& strName);
 unsigned int CALLBACK threadProc(void *pArg);
 
 
@@ -93,6 +100,8 @@ int _tmain(int argc, _TCHAR* argv[])
 			 CS_MODE_32 ,
 			 &handle
 			 );
+
+
 
 	//  1.2 附加一个已经运行的进程,以进行调试.
 	//DebugActiveProcess( );
@@ -240,6 +249,27 @@ int _tmain(int argc, _TCHAR* argv[])
 			case CREATE_PROCESS_DEBUG_EVENT:
 				dwOEp = (DWORD)de.u.CreateProcessInfo.lpStartAddress;
 				hProcess = (HANDLE)de.u.CreateProcessInfo.hProcess;
+
+				if (SymInitialize(hProcess, PDB_PATH, FALSE) == TRUE)
+				{
+					DWORD64 mouduleAddress = SymLoadModule64(hProcess, 
+															de.u.CreateProcessInfo.hFile,
+															NULL, 
+															NULL,
+															(DWORD64)de.u.CreateProcessInfo.lpBaseOfImage, 
+															0);
+
+					if (mouduleAddress == 0)
+					{
+						printf("symmoudule64 load failed\n");
+					}
+				}
+				else
+				{
+					printf("symmoudule64 init failed\n");
+				}
+
+				
 				//ypedef struct _CREATE_PROCESS_DEBUG_INFO {
 				//	HANDLE hFile;  // 被创建进程的可执行文件的文件句柄
 				//	HANDLE hProcess;// 被创建进程的进程句柄
@@ -270,6 +300,22 @@ int _tmain(int argc, _TCHAR* argv[])
 				//DEBUG( "线程退出事件\n" );
 				break;
 			case LOAD_DLL_DEBUG_EVENT:
+			{
+				DWORD64 moduleAddress = SymLoadModule64(hProcess, 
+														de.u.LoadDll.hFile, 
+														NULL, 
+														NULL, 
+														(DWORD64)de.u.LoadDll.lpBaseOfDll, 
+														 0);
+
+				if (moduleAddress == 0)
+				{
+					
+					printf("SymLoadModule64 LoadDll failed -- %d\n",GetLastError());
+				}
+				
+				CloseHandle(de.u.LoadDll.hFile);
+			}
 				//typedef struct _LOAD_DLL_DEBUG_INFO {
 				//	HANDLE hFile; // dll的文件句柄
 				//	LPVOID lpBaseOfDll;// dll加载基址
@@ -362,12 +408,48 @@ unsigned int CALLBACK threadProc(void *pArg)
 			istringstream is(buff);
 			is >> operation>> address >> size;
 
-			if (operation.compare("p") == 0)
+			if (operation.compare("t") == 0)
 			{
 				bIsTF = true;
 				setBreakpoint_tf();
 				SetEvent(g_WaitRun);
 				break;
+			}
+			else if (operation.compare("p") == 0)
+			{
+				DWORD nextCall = 0;
+				IsCall(nextCall);
+				if (nextCall == 0)
+				{
+					bIsTF = true;
+					setBreakpoint_tf();
+					SetEvent(g_WaitRun);
+					break;
+				}
+				else
+				{
+					printf("a call! %x\n",nextCall);
+
+					if (isBreakpoint((LPVOID)nextCall))
+					{
+						printf("该地址已经存在断点！\n");
+						break;
+					}
+
+					breakpoint *bp = new bp_int3((LPVOID)nextCall);
+
+					if (bp->install())
+					{
+						bpList.push_back(bp);
+						SetEvent(g_WaitRun);
+						break;
+					}
+					else
+					{
+						printf("断点安装失败！\n");
+						break;
+					}
+				}
 			}
 			else if (operation.compare("g") == 0)
 			{
@@ -680,6 +762,37 @@ void editMemoryDword(LPVOID addr, DWORD dw)
 	WriteProcessMemory(hProcess, addr, &localDword, 4, &dwSize);
 }
 
+void IsCall(DWORD & nextCall)
+{
+	char buff[32];
+	DWORD dwRead = 0;
+	ReadProcessMemory(hProcess,
+		(LPVOID)ct.Eip,
+		buff,
+		32,
+		&dwRead);
+
+	cs_insn* ins = nullptr;
+
+	int count = 0;
+	count = cs_disasm(handle,
+		(uint8_t*)buff,
+		32,
+		ct.Eip,
+		0,
+		&ins
+		);
+
+	if (strcmp(ins[0].mnemonic, "call") == 0)
+	{
+		nextCall = ins[1].address;
+	}
+	else
+	{
+		nextCall = 0;
+	}
+}
+
 void disassembly(LPVOID addr, int nNum)
 {
 	char buff[500];
@@ -744,6 +857,16 @@ void disassembly(LPVOID addr, int nNum)
 
 			printf("|");
 
+			if (strcmp(ins[i].mnemonic,"call") == 0)
+			{
+				string symbol;
+				string addr = ins[i].op_str;
+				GetSymName(std::stoi(addr, nullptr, 16), symbol);
+				printf("%s %s", ins[i].mnemonic, ins[i].op_str);
+				if (symbol.size()>0)
+					cout << " <" << symbol << ">" << endl;
+			}
+			else
 			printf("%s %s\n", ins[i].mnemonic, ins[i].op_str);
 		}
 
@@ -792,4 +915,34 @@ void Assembler(string instruction, LPVOID addr)
 
 	// close Keystone instance when done
 	ks_close(ks);
+}
+
+SIZE_T GetSymAddress(const char* pszName)
+{
+	char buffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME*sizeof(TCHAR)];
+	PSYMBOL_INFO pSymbol = (PSYMBOL_INFO)buffer;
+	pSymbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+	pSymbol->MaxNameLen = MAX_SYM_NAME;
+
+	// 根据名字查询符号信息，输出到pSymbol中
+	if (!SymFromName(hProcess, pszName, pSymbol))
+	{
+		return 0;
+	}
+	return (SIZE_T)pSymbol->Address;	// 返回函数地址
+}
+
+BOOL GetSymName(SIZE_T nAddress, string& strName)
+{
+	DWORD64 dwDisplacement = 0;
+	char buffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME*sizeof(TCHAR)];
+	PSYMBOL_INFO pSymbol = (PSYMBOL_INFO)buffer;
+	pSymbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+	pSymbol->MaxNameLen = MAX_SYM_NAME;
+
+	if (!SymFromAddr(hProcess, nAddress, &dwDisplacement, pSymbol))
+		return FALSE;
+
+	strName = pSymbol->Name;
+	return TRUE;
 }

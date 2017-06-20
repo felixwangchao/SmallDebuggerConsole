@@ -6,7 +6,8 @@
 #pragma comment(lib,"capstone_x86.lib")
 #include "keystone/keystone.h"
 #pragma comment(lib,"keystone_x86.lib")
-
+#include <Dbghelp.h>
+#pragma comment(lib, "Dbghelp.lib")
 #include <process.h>
 #include <vector>
 #include <string>
@@ -22,7 +23,8 @@ using std::vector;
 #define DEBUG(str) 
 #endif // _DEBUG
 
-#define PATH L"E:\\2.exe"
+#define PATH L"E:\\hellocpp.exe"
+#define PDB_PATH "E:\\"
 
 #define SOFTWARE_BREAKPOINT		0x1
 #define HARDWARE_BREAKPOINT		0x2
