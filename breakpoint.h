@@ -23,7 +23,7 @@ class bp_int3 : public breakpoint
 {
 public:
 	bp_int3(){}
-	bp_int3(LPVOID address) :breakpoint(address)
+	bp_int3(LPVOID address, string des = "") :breakpoint(address), description(des)
 	{
 		this->type = SOFTWARE_BREAKPOINT;
 		setOldType();
@@ -34,6 +34,8 @@ public:
 	bool isCurrent(LPVOID br);
 	void show();
 	void setOldType();
+public:
+	string description;
 };
 
 class bp_hdr : public breakpoint

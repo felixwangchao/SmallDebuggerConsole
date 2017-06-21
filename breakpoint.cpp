@@ -32,7 +32,15 @@ bool bp_int3::isCurrent(LPVOID br)
 void bp_int3::show()
 {
 	DWORD addr = (DWORD)(this->address);
-	printf("软件断点：%08x\n",addr);
+	printf("软件断点：%08x",addr);
+	if (description.size() > 0)
+	{
+		printf("  描述信息:%s\n", description.c_str());
+	}
+	else
+	{
+		printf("\n");
+	}
 }
 
 void bp_int3::setOldType()
@@ -250,7 +258,6 @@ void bp_hdr_rw::show()
 }
 
 
-
 bool bp_mm::install()
 {
 	DWORD dwBase;
@@ -279,7 +286,18 @@ bool bp_mm::install()
 }
 void bp_mm::repair()
 {
-	return;
+	DWORD dwBase;
+	DWORD dwSize;
+	DWORD dwAddr = (DWORD)(this->address);
+	bool bRet;
+	MEMORY_BASIC_INFORMATION mbi = { 0 };
+
+	bRet = VirtualQueryEx(hProcess, (LPCVOID)dwAddr, &mbi, sizeof(MEMORY_BASIC_INFORMATION));
+
+	dwBase = (DWORD)mbi.BaseAddress;
+	dwSize = (DWORD)mbi.RegionSize;
+	DWORD dwTemp;
+	VirtualProtectEx(hProcess, (LPVOID)dwBase, dwSize, this->OldProtect, &(dwTemp));
 }
 
 void bp_mm::cancel()

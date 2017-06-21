@@ -198,6 +198,7 @@ int _tmain(int argc, _TCHAR* argv[])
 					SetEvent(g_WaitStop);
 					WaitForSingleObject(g_WaitRun, -1);
 
+
 					if (tmp != nullptr)
 					{
 						bHdrBp = true;
@@ -367,13 +368,52 @@ bool setCurrentBp()
 	return false;
 }
 
+bool delBp(DWORD size)
+{
+	breakpoint* current = bpList[size];
+	current->repair();
+	bpList.erase(bpList.begin() + size);
+	delete current;
+	return true;
+}
+
 void displayBPList()
 {
+	int i = 0;
 	vector <breakpoint*>::iterator iter;
 	for (iter = bpList.begin(); iter != bpList.end(); ++iter)
 	{
+		printf(" %d ", i++);
 		(*iter)->show();
 	}
+}
+
+void displayHelp()
+{
+	cout << "调试器帮助信息\n"
+		<< "1.执行类操作\n"
+		<< "\tt\t\t\t单步步入\n"
+		<< "\tp\t\t\t单步步过\n"
+		<< "\tg\t\t\t开始执行\n"
+		<< "2.断点类操作\n"
+		<< "\tbp address\t\t软件断点\n"
+		<< "\tba address\t\t硬件断点\n"
+		<< "\tbm address\t\t内存断点\n"
+		<< "\tbapi name\t\tAPI断点\n"
+		<< "\tbc num\t\t\t清除第num号断点\n"
+		<< "3.内存编辑类操作\n"
+		<< "\teb address byte\t\t在该地址写入字节信息\n"
+		<< "\ted address dw\t\t在该地址写入4字节信息\n"
+		<< "\ta address\t\t在该地址写入汇编代码\n"
+		<< "4.显示类操作\n"
+		<< "\th\t\t\t显示帮助信息\n"
+		<< "\ts\t\t\t显示栈信息\n"
+		<< "\tr\t\t\t显示寄存器信息\n"
+		<< "\tbl\t\t\t显示断点列表\n"
+		<< "\tdd address\t\t显示该地址的内存，以四字节为单位\n"
+		<< "\tdb address\t\t显示该地址的内存，以字节为单位\n"
+		<< "\tda address\t\t显示该地址处的ascii字符串\n"
+		<< endl;
 }
 
 
@@ -428,15 +468,14 @@ unsigned int CALLBACK threadProc(void *pArg)
 				}
 				else
 				{
-					printf("a call! %x\n",nextCall);
 
 					if (isBreakpoint((LPVOID)nextCall))
 					{
-						printf("该地址已经存在断点！\n");
+						printf("[!]该地址已经存在断点！\n");
 						break;
 					}
-
-					breakpoint *bp = new bp_int3((LPVOID)nextCall);
+					string msg = "步过断点";
+					breakpoint *bp = new bp_int3((LPVOID)nextCall,msg);
 
 					if (bp->install())
 					{
@@ -446,7 +485,7 @@ unsigned int CALLBACK threadProc(void *pArg)
 					}
 					else
 					{
-						printf("断点安装失败！\n");
+						printf("[!]断点安装失败！\n");
 						break;
 					}
 				}
@@ -466,7 +505,7 @@ unsigned int CALLBACK threadProc(void *pArg)
 
 				if (isBreakpoint(addr))
 				{
-					printf("该地址已经存在断点！\n");
+					printf("[!]该地址已经存在断点！\n");
 					break;
 				}
 
@@ -477,9 +516,55 @@ unsigned int CALLBACK threadProc(void *pArg)
 					bpList.push_back(bp);
 				}
 			}
+
+			else if (operation.compare("bapi") == 0)
+			{
+				const char* pszName = address.c_str();
+				DWORD dwApi = 0;
+				dwApi = GetSymAddress(pszName);
+				if (dwApi != 0)
+				{
+					LPVOID addr = (LPVOID)dwApi;
+					printf("[*]API:%s --- 0x%08x\n", pszName, dwApi);
+
+					if (isBreakpoint(addr))
+					{
+						printf("[!]该地址已经存在断点！\n");
+						break;
+					}
+					string msg = "API断点";
+					breakpoint *bp = new bp_int3(addr,msg);
+
+					if (bp->install())
+					{
+						bpList.push_back(bp);
+					}
+				}
+				else
+				{
+					printf("[!]找不到API:%s的地址\n",pszName);
+				}
+			}
+			else if (operation.compare("bc") == 0)
+			{
+				DWORD size = std::stoi(address, 0, 16);
+				if (size >= bpList.size() || size < 0)
+				{
+					printf("[!]标号错误\n");
+				}
+				else
+				{
+					//printf("尝试删除标号:%d的断点\n", size);
+					delBp(size);
+				}
+			}
 			else if (operation.compare("r") == 0)
 			{
 				displayRegisters(ct);
+			}
+			else if (operation.compare("h") == 0)
+			{
+				displayHelp();
 			}
 			else if (operation.compare("s") == 0)
 			{
@@ -506,7 +591,7 @@ unsigned int CALLBACK threadProc(void *pArg)
 				}
 				else
 				{
-					cout << "请输入一个有效的值！";
+					cout << "[!]请输入一个有效的值！";
 				}
 			}
 
@@ -518,7 +603,7 @@ unsigned int CALLBACK threadProc(void *pArg)
 				}
 				else
 				{
-					cout << "请输入一个有效的值！";
+					cout << "[!]请输入一个有效的值！";
 				}
 			}
 
@@ -527,14 +612,14 @@ unsigned int CALLBACK threadProc(void *pArg)
 				if (address.size() > 0 && address.size() <= 8)
 				{
 					LPVOID addr = (LPVOID)(std::stoi(address, nullptr, 16));
-					printf("请输入汇编指令 > ");
+					printf("[*]请输入汇编指令 > ");
 					string cmd;
 					getline(cin, cmd);
 					Assembler(cmd,addr);
 				}
 				else
 				{
-					printf("请输入一个有效的地址\n");
+					printf("[!]请输入一个有效的地址\n");
 				}
 			}
 
@@ -583,12 +668,12 @@ unsigned int CALLBACK threadProc(void *pArg)
 					}
 					else
 					{
-						printf("只能设置四个硬件断点\n");
+						printf("[!]只能设置四个硬件断点\n");
 					}
 				}
 				else
 				{
-					printf("请输入一个合法的地址！\n");
+					printf("[!]请输入一个合法的地址！\n");
 				}
 			}
 		}
@@ -712,6 +797,7 @@ void displayModeAscii(LPVOID addr, char* buff)
 			break;
 		}
 	}
+	printf("\n");
 	delete[] buff;
 }
 
