@@ -27,6 +27,12 @@ public:
 	{
 		this->type = SOFTWARE_BREAKPOINT;
 		setOldType();
+		condition = "";
+	}
+	bp_int3(LPVOID address, string des, string condition) :breakpoint(address), description(des), condition(condition)
+	{
+		this->type = CONDITION_BREAKPOINT;
+		setOldType();
 	}
 	~bp_int3(){}
 	bool install();
@@ -36,6 +42,7 @@ public:
 	void setOldType();
 public:
 	string description;
+	string condition;
 };
 
 class bp_hdr : public breakpoint
@@ -44,12 +51,15 @@ public:
 	bp_hdr(LPVOID address) : breakpoint(address)
 	{
 		this->type = HARDWARE_BREAKPOINT;
+		this->bIsInDr = false;
 	}
 	~bp_hdr(){}
 	bool install();
 	void repair();
 	bool isCurrent(LPVOID br);
 	void show();
+public:
+	bool bIsInDr;
 };
 
 class bp_hdr_rw : public breakpoint

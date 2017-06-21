@@ -12,6 +12,9 @@ HANDLE g_WaitRun = 0;
 HANDLE g_WaitStop = 0;
 
 HANDLE hProcess = 0;
+DWORD dwPid = 0;
 
 bool bIsMM = false;
+bool bNeedStop = false;
 bool bIsTF = false;
+bool bCdBrNotTrigged = false;

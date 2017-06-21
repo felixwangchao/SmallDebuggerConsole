@@ -14,6 +14,7 @@ bp_mm* findMMBp(LPVOID addr);
 bool isBreakpoint(LPVOID addr);
 void editMemoryByte(LPVOID addr, byte b);
 void editMemoryDword(LPVOID, DWORD);
+void displayModule();
 void displayMemory(LPVOID addr, int mode);
 void disassembly(LPVOID addr, int nNum = 7);
 
@@ -23,6 +24,8 @@ void IsCall(DWORD & nextCall);
 // 符号操作
 SIZE_T GetSymAddress(const char* pszName);
 BOOL GetSymName(SIZE_T nAddress, string& strName);
+
+bp_int3* getCurrentConditionBp(LPVOID addr);
 unsigned int CALLBACK threadProc(void *pArg);
 
 
@@ -50,6 +53,14 @@ bp_mm * current_mm_copy;
 
 int _tmain(int argc, _TCHAR* argv[])
 {
+
+	// 0. 反调试
+	if (IsDebuggerPresent())
+	{
+		printf("存在调试器!\n");
+		//return 0;
+	}
+
 	// 1. 创建调试会话
 	//	1.1 创建一个尚未运行的进程.以进行调试
 	STARTUPINFO si = { sizeof( STARTUPINFO ) };
@@ -66,6 +77,7 @@ int _tmain(int argc, _TCHAR* argv[])
 						  &si ,
 						  &pi
 						  );
+
 	if( bRet == FALSE ) {
 		//DEBUG("创建进程失败");
 		return 0;
@@ -133,7 +145,7 @@ int _tmain(int argc, _TCHAR* argv[])
 				//} EXCEPTION_DEBUG_INFO , *LPEXCEPTION_DEBUG_INFO;
 				// 1. 将反汇编信息输出, 准备和用户进行交互
 				// 2. 获取OPCODE
-				ct = { CONTEXT_CONTROL | CONTEXT_DEBUG_REGISTERS }; 
+				ct = { CONTEXT_CONTROL | CONTEXT_DEBUG_REGISTERS | CONTEXT_SEGMENTS | CONTEXT_INTEGER };
 
 				GetThreadContext( OpenThread( THREAD_ALL_ACCESS , FALSE , de.dwThreadId ) , &ct );
 
@@ -146,7 +158,8 @@ int _tmain(int argc, _TCHAR* argv[])
 					if (bHdrBp == true)
 					{
 						bHdrBp = false;
-						pHdrBp->install();
+						//pHdrBp->install();
+						ReinstallBp();
 						pHdrBp = nullptr;
 						dwReturnCode = DBG_EXCEPTION_HANDLED;
 
@@ -158,45 +171,43 @@ int _tmain(int argc, _TCHAR* argv[])
 					{
 						// 说明当前除了是单步，还是一个硬件断点
 						RepairMemory();
+						bIsMM = false;
 					}
 
 					if (bIsMM)
 					{
-
-						/* 如果这是内存断点造成的进入单步，则判断是否命中，如果不是则继续执行
-						printf("++++++++++++++\n current_mm = %x  Eip = %x  exception type : %d Exception address: %x\n+++++++++++++++\n", 
-							current_mm, 
-							ct.Eip, 
-							de.u.Exception.ExceptionRecord.ExceptionInformation[0],
-							de.u.Exception.ExceptionRecord.ExceptionInformation[1]);
-
-						disassembly((LPVOID)ct.Eip);
-
-						//printf("+++++++++++++++++++++++++++++++++++++++\n");*/
-
-
+						// 如果当前内存断点信息意外被清除，则通过备份恢复
 						if (current_mm == nullptr)
 						{
 							current_mm = current_mm_copy;
 						}
+
+						// 判断当前Eip是否命中内存断点，如果没命中内存断点，且不是一个用户TF造成时，且不是一个其他断点时，重新安装所有断点
 						bool bIsCurrentMM = (current_mm->address == (LPVOID)ct.Eip);
-						if (!bIsCurrentMM)
-							current_mm->install();
-
-						current_mm = nullptr;
-
+						
 						if (bIsTF == false && !bIsCurrentMM)
 						{
+							current_mm->install();
+							current_mm = nullptr;
 							dwReturnCode = DBG_EXCEPTION_HANDLED;
 							break;
 						}
 					}
+
+					if (bCdBrNotTrigged)
+					{
+						bCdBrNotTrigged = false;
+						ReinstallBp();
+						dwReturnCode = DBG_EXCEPTION_HANDLED;
+						break;
+					}
 					
 					bIsTF = false;
+
 					disassembly((LPVOID)ct.Eip);
-					ReinstallBp();
 					SetEvent(g_WaitStop);
 					WaitForSingleObject(g_WaitRun, -1);
+					ReinstallBp();
 
 
 					if (tmp != nullptr)
@@ -207,9 +218,11 @@ int _tmain(int argc, _TCHAR* argv[])
 						setBreakpoint_tf();
 					}
 				}
-
+				
 				else if (de.u.Exception.ExceptionRecord.ExceptionCode == EXCEPTION_BREAKPOINT)
 				{
+
+					// 入口点断点
 					static bool bFirst = true;
 					if (bFirst)
 					{
@@ -219,11 +232,74 @@ int _tmain(int argc, _TCHAR* argv[])
 						break;
 					}
 					bp.repair();
+
+					// 触发软件断点
 					ct.Eip = ct.Eip - 1;
 					SetThreadContext(OpenThread(THREAD_ALL_ACCESS, FALSE, de.dwThreadId), &ct);
 
 					RepairMemory();
-					printf("current address:%x\n", ct.Eip);
+					bIsMM = false;
+
+					bp_int3* bp = getCurrentConditionBp((LPVOID)ct.Eip);
+
+					if (bp != nullptr)
+					{
+						bool bResult;
+						string cmd;
+						string op1, op2, operation;
+						cmd = bp->condition;
+
+						istringstream is(cmd);
+						is >> op1 >> operation >> op2;
+
+						DWORD opcode1, opcode2;
+
+						if (op1.compare("eax") == 0)
+						{
+							opcode1 = ct.Eax;
+						}
+						else if (op1.compare("ecx") == 0)
+						{
+							opcode1 = ct.Ecx;
+						}
+						else if (op1.compare("edx") == 0)
+						{
+							opcode1 = ct.Edx;
+						}
+
+						if (op2.compare("eax") == 0)
+						{
+							opcode2 = ct.Eax;
+						}
+						else if (op2.compare("ecx") == 0)
+						{
+							opcode2 = ct.Ecx;
+						}
+						else if (op2.compare("edx") == 0)
+						{
+							opcode2 = ct.Edx;
+						}
+						else
+						{
+							opcode2 = std::stoi(op2,nullptr,16);
+						}
+
+						if (operation.compare(">") == 0)
+						{
+							bResult = opcode1 > opcode2;
+						}
+						else if (operation.compare("==") == 0)
+						{
+							bResult = opcode1 == opcode2;
+						}
+						else if (operation.compare("<") == 0)
+						{
+							bResult = opcode1 < opcode2;
+						}
+						printf("Result : %d\n",bResult);
+						bCdBrNotTrigged = !bResult;
+					}
+
 					setBreakpoint_tf();
 
 				}
@@ -237,11 +313,21 @@ int _tmain(int argc, _TCHAR* argv[])
 						dwReturnCode = DBG_EXCEPTION_NOT_HANDLED;
 						break;
 					}
-					bm->cancel();
+
+					// 这里需要判断当前地点是否是一个其他断点，如果是，首先需要将bNeedStop置位
+					// 然后如果是一个
+
+					bm->repair();
 					current_mm = bm;
 					current_mm_copy = bm;
-					bIsMM = true;
-					setBreakpoint_tf();
+
+
+					// 如果当前不是一个其他断点
+					if (isBreakpoint((LPVOID)ct.Eip) != true)
+					{
+						bIsMM = true;
+						setBreakpoint_tf();	
+					}
 				}
 			}
 			dwReturnCode = DBG_EXCEPTION_HANDLED;
@@ -250,6 +336,7 @@ int _tmain(int argc, _TCHAR* argv[])
 			case CREATE_PROCESS_DEBUG_EVENT:
 				dwOEp = (DWORD)de.u.CreateProcessInfo.lpStartAddress;
 				hProcess = (HANDLE)de.u.CreateProcessInfo.hProcess;
+				dwPid = GetProcessId(hProcess);
 
 				if (SymInitialize(hProcess, PDB_PATH, FALSE) == TRUE)
 				{
@@ -269,7 +356,6 @@ int _tmain(int argc, _TCHAR* argv[])
 				{
 					printf("symmoudule64 init failed\n");
 				}
-
 				
 				//ypedef struct _CREATE_PROCESS_DEBUG_INFO {
 				//	HANDLE hFile;  // 被创建进程的可执行文件的文件句柄
@@ -410,6 +496,7 @@ void displayHelp()
 		<< "\ts\t\t\t显示栈信息\n"
 		<< "\tr\t\t\t显示寄存器信息\n"
 		<< "\tbl\t\t\t显示断点列表\n"
+		<< "\tlm\t\t\t显示模块信息\n"
 		<< "\tdd address\t\t显示该地址的内存，以四字节为单位\n"
 		<< "\tdb address\t\t显示该地址的内存，以字节为单位\n"
 		<< "\tda address\t\t显示该地址处的ascii字符串\n"
@@ -514,6 +601,82 @@ unsigned int CALLBACK threadProc(void *pArg)
 				if (bp->install())
 				{
 					bpList.push_back(bp);
+					bp->repair();
+				}
+				else
+				{
+					delete bp;
+				}
+			}
+
+			else if (operation.compare("bt") == 0)
+			{
+				LPVOID addr = (LPVOID)(std::stoi(address, nullptr, 16));
+				
+				if (isBreakpoint(addr))
+				{
+					printf("[!]该地址已经存在断点!\n");
+					break;
+				}
+
+				cout << "请输入条件：\n"
+					<< "条件格式 寄存器 操作符 寄存器/操作数\n"
+					<< "目前寄存器只支持eax，ecx，edx\n"
+					<< "操作符只支持 > < == \n"
+					<< "现在请输入条件：" 
+					<< endl;
+
+				string cmd;
+				getline(cin, cmd);
+
+				string op1, op2, operation;
+
+				istringstream is(cmd);
+				is >> op1>> operation >> op2;
+
+				if (op1.size() == 0 || op2.size() == 0 || operation.size() == 0)
+				{
+					printf("[!]条件格式错误!\n");
+					continue;
+				}
+
+				if (op1.compare("eax") != 0 && op1.compare("ecx") != 0 && op1.compare("edx") != 0)
+				{
+					printf("[!]条件格式错误!\n");
+					continue;
+				}
+
+				if (operation.compare("<") != 0 && operation.compare(">") != 0 && operation.compare("==") != 0)
+				{
+					printf("[!]条件格式错误!\n");
+					continue;
+				}
+
+				if (op2.compare("eax") != 0 && op2.compare("ecx") != 0 && op2.compare("edx") != 0)
+				{
+					try
+					{
+						LPVOID addr = (LPVOID)std::stoi(op2, nullptr, 16);
+					}
+					catch (exception& e)
+					{
+						printf("[!]条件格式错误!\n");
+						continue;
+					}
+				}
+
+				string msg1 = "条件断点";
+				string msg2 = cmd;
+				breakpoint *bp = new bp_int3(addr, msg1, msg2);
+				
+				if (bp->install())
+				{
+					bpList.push_back(bp);
+					bp->repair();
+				}
+				else
+				{
+					delete bp;
 				}
 			}
 
@@ -538,6 +701,11 @@ unsigned int CALLBACK threadProc(void *pArg)
 					if (bp->install())
 					{
 						bpList.push_back(bp);
+						bp->repair();
+					}
+					else
+					{
+						delete bp;
 					}
 				}
 				else
@@ -568,18 +736,44 @@ unsigned int CALLBACK threadProc(void *pArg)
 			}
 			else if (operation.compare("s") == 0)
 			{
-				displayStack(de,ct, stoi(address,nullptr,16));
+				if (address.size() > 0)
+					displayStack(de, ct, stoi(address, nullptr, 16));
+				else
+					displayStack(de, ct);
 			}
 			else if (operation.compare("bl") == 0)
 			{
 				displayBPList();
 			}
+			else if (operation.compare("lm") == 0)
+			{
+				displayModule();
+			}
 			else if (operation.compare("u") == 0)
 			{
-				if (size.length()!=0)
-					disassembly((LPVOID)stoi(address, nullptr, 16), stoi(size, nullptr, 16));
+				if (size.length() != 0)
+				{
+					if (address.size() == 0)
+					{
+						disassembly((LPVOID)ct.Eip, stoi(size, nullptr, 16));
+					}
+					else
+					{
+						disassembly((LPVOID)stoi(address, nullptr, 16), stoi(size, nullptr, 16));
+					}
+				}
+
 				else
-					disassembly((LPVOID)stoi(address, nullptr, 16));
+				{
+					if (address.size() == 0)
+					{
+						disassembly((LPVOID)ct.Eip);
+					}
+					else
+					{
+						disassembly((LPVOID)stoi(address, nullptr, 16));
+					}
+				}
 			}
 
 			else if (operation.compare("eb") == 0)
@@ -647,6 +841,11 @@ unsigned int CALLBACK threadProc(void *pArg)
 				if (bm->install())
 				{
 					bpList.push_back(bm);
+					bm->repair();
+				}
+				else
+				{
+					delete bm;
 				}
 			}
 
@@ -664,6 +863,11 @@ unsigned int CALLBACK threadProc(void *pArg)
 						if (ba->install())
 						{
 							bpList.push_back(ba);
+							ba->repair();
+						}
+						else
+						{
+							delete ba;
 						}
 					}
 					else
@@ -745,6 +949,40 @@ bool isBreakpoint(LPVOID addr)
 		}
 	}
 	return false;
+}
+
+bp_int3* getCurrentConditionBp(LPVOID addr)
+{
+	vector <breakpoint*>::iterator iter;
+	for (iter = bpList.begin(); iter != bpList.end(); ++iter)
+	{
+		if ((*iter)->address == addr && (*iter)->type == CONDITION_BREAKPOINT)
+		{
+			return (bp_int3*)(*iter);
+		}
+	}
+	return nullptr;
+}
+
+void displayModule()
+{
+	HANDLE hModuleSnap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE,dwPid);
+
+	if (hModuleSnap == INVALID_HANDLE_VALUE)
+		return;
+
+	MODULEENTRY32 moduleInfo = { sizeof(MODULEENTRY32) };
+
+	printf("加载基址 | 模块大小 |        模块名         |   模块路径\n");
+	Module32First(hModuleSnap, &moduleInfo);
+	do
+	{
+		printf("%08X | ", moduleInfo.modBaseAddr);
+		printf("%08d | ", moduleInfo.modBaseSize);
+		wprintf(L"%-22s|", moduleInfo.szModule);
+		wprintf(L"%s\n", moduleInfo.szExePath);
+
+	} while (Module32Next(hModuleSnap, &moduleInfo));
 }
 
 void displayModeByte(LPVOID addr, char* buff)

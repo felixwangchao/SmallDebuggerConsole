@@ -35,7 +35,16 @@ void bp_int3::show()
 	printf("软件断点：%08x",addr);
 	if (description.size() > 0)
 	{
-		printf("  描述信息:%s\n", description.c_str());
+		printf("  描述信息:%s", description.c_str());
+
+		if (this->type == CONDITION_BREAKPOINT)
+		{
+			printf("  %s\n", condition.c_str());
+		}
+		else
+		{
+			printf("\n");
+		}
 	}
 	else
 	{
@@ -69,11 +78,14 @@ void disableBreakpoint_tf()
 
 bool bp_hdr::install()
 {
-
+	if (bIsInDr == true)
+	{
+		return true;
+	}
 	DBG_REG7* pDr7 = (DBG_REG7*)&ct.Dr7;
 	if (pDr7->L0 == 0)
 	{
-		printf("dr0\n");
+		printf("install dr0\n");
 		ct.Dr0 = (DWORD)(this->address);
 		pDr7->RW0 = 0;
 		pDr7->LEN0 = 0;
@@ -81,7 +93,7 @@ bool bp_hdr::install()
 	}
 	else if (pDr7->L1 == 0)
 	{
-		printf("dr1\n");
+		printf("install dr1\n");
 		ct.Dr1 = (DWORD)(this->address);
 		pDr7->RW1 = 0;
 		pDr7->LEN1 = 0;
@@ -89,7 +101,7 @@ bool bp_hdr::install()
 	}
 	else if (pDr7->L2 == 0)
 	{
-		printf("dr2\n");
+		printf("install dr2\n");
 		ct.Dr2 = (DWORD)(this->address);
 		pDr7->RW2 = 0;
 		pDr7->LEN2 = 0;
@@ -97,7 +109,7 @@ bool bp_hdr::install()
 	}
 	else if (pDr7->L3 == 0)
 	{
-		printf("dr3\n");
+		printf("install dr3\n");
 		ct.Dr3 = (DWORD)(this->address);
 		pDr7->RW3 = 0;
 		pDr7->LEN3 = 0;
@@ -108,41 +120,53 @@ bool bp_hdr::install()
 		return FALSE;
 	}
 	SetThreadContext(OpenThread(THREAD_ALL_ACCESS, FALSE, de.dwThreadId), &ct);
+	bIsInDr = true;
 	return true;
 }
 
 void bp_hdr::repair()
 {
+
+	if (bIsInDr == false)
+	{
+		return;
+	}
+
 	DBG_REG7* pDr7 = (DBG_REG7*)&ct.Dr7;
 	if (pDr7->L0 == 1 && ct.Dr0 == (DWORD)(this->address))
 	{
+		printf("clear dr0\n");
 		ct.Dr0 = (DWORD)(nullptr);
 		pDr7->RW0 = 0;
 		pDr7->LEN0 = 0;
 		pDr7->L0 = 0;
 	}
-	if (pDr7->L1 == 1 && ct.Dr1 == (DWORD)(this->address))
+	else if (pDr7->L1 == 1 && ct.Dr1 == (DWORD)(this->address))
 	{
+		printf("clear dr1\n");
 		ct.Dr1 = (DWORD)(nullptr);
 		pDr7->RW1 = 0;
 		pDr7->LEN1 = 0;
 		pDr7->L1 = 0;
 	}
-	if (pDr7->L2 == 1 && ct.Dr2 == (DWORD)(this->address))
+	else if (pDr7->L2 == 1 && ct.Dr2 == (DWORD)(this->address))
 	{
+		printf("clear dr2\n");
 		ct.Dr2 = (DWORD)(nullptr);
 		pDr7->RW2 = 0;
 		pDr7->LEN2 = 0;
 		pDr7->L2 = 0;
 	}
-	if (pDr7->L3 == 1 && ct.Dr3 == (DWORD)(this->address))
+	else if (pDr7->L3 == 1 && ct.Dr3 == (DWORD)(this->address))
 	{
+		printf("clear dr3\n");
 		ct.Dr3 = (DWORD)(nullptr);
 		pDr7->RW3 = 0;
 		pDr7->LEN3 = 0;
 		pDr7->L3 = 0;
 	}
 	SetThreadContext(OpenThread(THREAD_ALL_ACCESS, FALSE, de.dwThreadId), &ct);
+	bIsInDr = false;
 }
 
 bool bp_hdr::isCurrent(LPVOID br)

@@ -9,6 +9,8 @@
 #include <Dbghelp.h>
 #pragma comment(lib, "Dbghelp.lib")
 #include <process.h>
+#include<tlhelp32.h>
+#include <psapi.h>
 #include <vector>
 #include <string>
 #include <sstream>
@@ -26,10 +28,11 @@ using std::vector;
 #define PATH L"E:\\hellocpp.exe"
 #define PDB_PATH "E:\\"
 
-#define SOFTWARE_BREAKPOINT		0x1
-#define HARDWARE_BREAKPOINT		0x2
-#define HARDWARE_RW_BREAKPOINT	0x3
-#define MEMORY_BREAKPOINT		0x4
+#define SOFTWARE_BREAKPOINT			0x1
+#define HARDWARE_BREAKPOINT			0x2
+#define HARDWARE_RW_BREAKPOINT		0x3
+#define CONDITION_BREAKPOINT		0x4
+#define MEMORY_BREAKPOINT			0x5
 
 // 调试相关的全局变量
 extern cs_opt_mem memop;
@@ -44,14 +47,23 @@ extern CONTEXT ct;
 extern HANDLE g_WaitRun;
 extern HANDLE g_WaitStop;
 
-// 进程句柄
+// 进程
+extern DWORD dwPid;
 extern HANDLE hProcess;
 
 // 内存断点
 extern bool bIsMM;
 
+// 内存判断时触发了其他断点
+extern bool bNeedStop;
+
 // 真单步断点
 extern bool bIsTF;
+
+// 是否触发条件断点
+extern bool bCdBrNotTrigged;
+
+
 
 // eflags结构体
 typedef struct _EFLAGS
@@ -106,4 +118,5 @@ typedef struct _DBG_REG7{
 	unsigned RW3 : 2;
 	unsigned LEN3 : 2;
 }DBG_REG7, *PDBG_REG7;
+
 
