@@ -85,7 +85,7 @@ bool bp_hdr::install()
 	DBG_REG7* pDr7 = (DBG_REG7*)&ct.Dr7;
 	if (pDr7->L0 == 0)
 	{
-		printf("install dr0\n");
+		//printf("install dr0\n");
 		ct.Dr0 = (DWORD)(this->address);
 		pDr7->RW0 = 0;
 		pDr7->LEN0 = 0;
@@ -93,7 +93,7 @@ bool bp_hdr::install()
 	}
 	else if (pDr7->L1 == 0)
 	{
-		printf("install dr1\n");
+		//printf("install dr1\n");
 		ct.Dr1 = (DWORD)(this->address);
 		pDr7->RW1 = 0;
 		pDr7->LEN1 = 0;
@@ -101,7 +101,7 @@ bool bp_hdr::install()
 	}
 	else if (pDr7->L2 == 0)
 	{
-		printf("install dr2\n");
+		//printf("install dr2\n");
 		ct.Dr2 = (DWORD)(this->address);
 		pDr7->RW2 = 0;
 		pDr7->LEN2 = 0;
@@ -109,7 +109,7 @@ bool bp_hdr::install()
 	}
 	else if (pDr7->L3 == 0)
 	{
-		printf("install dr3\n");
+		//printf("install dr3\n");
 		ct.Dr3 = (DWORD)(this->address);
 		pDr7->RW3 = 0;
 		pDr7->LEN3 = 0;
@@ -135,7 +135,7 @@ void bp_hdr::repair()
 	DBG_REG7* pDr7 = (DBG_REG7*)&ct.Dr7;
 	if (pDr7->L0 == 1 && ct.Dr0 == (DWORD)(this->address))
 	{
-		printf("clear dr0\n");
+		//printf("clear dr0\n");
 		ct.Dr0 = (DWORD)(nullptr);
 		pDr7->RW0 = 0;
 		pDr7->LEN0 = 0;
@@ -143,7 +143,7 @@ void bp_hdr::repair()
 	}
 	else if (pDr7->L1 == 1 && ct.Dr1 == (DWORD)(this->address))
 	{
-		printf("clear dr1\n");
+		//printf("clear dr1\n");
 		ct.Dr1 = (DWORD)(nullptr);
 		pDr7->RW1 = 0;
 		pDr7->LEN1 = 0;
@@ -151,7 +151,7 @@ void bp_hdr::repair()
 	}
 	else if (pDr7->L2 == 1 && ct.Dr2 == (DWORD)(this->address))
 	{
-		printf("clear dr2\n");
+		//printf("clear dr2\n");
 		ct.Dr2 = (DWORD)(nullptr);
 		pDr7->RW2 = 0;
 		pDr7->LEN2 = 0;
@@ -159,7 +159,7 @@ void bp_hdr::repair()
 	}
 	else if (pDr7->L3 == 1 && ct.Dr3 == (DWORD)(this->address))
 	{
-		printf("clear dr3\n");
+		//printf("clear dr3\n");
 		ct.Dr3 = (DWORD)(nullptr);
 		pDr7->RW3 = 0;
 		pDr7->LEN3 = 0;

@@ -800,6 +800,8 @@ void displayHelp()
 		<< "\tda address\t\t显示该地址处的ascii字符串\n"
 		<< "\texport address\t\t显示以该地址为基址的导出表\n"
 		<< "\timport address\t\t显示以该地址为基址的导入表\n"
+		<< "5. DUMP操作\n"
+		<< "\tdump\t\t\t创建DMP文件，保存为Mydump.dmp\n"
 		<< endl;
 }
 
@@ -891,8 +893,17 @@ unsigned int CALLBACK threadProc(void *pArg)
 			//
 			else if (operation.compare("bp") == 0)
 			{
-				LPVOID addr = (LPVOID)(std::stoi(address,nullptr,16));
-
+				LPVOID addr;
+				try
+				{
+					addr = (LPVOID)(std::stoi(address, nullptr, 16));
+				}
+				catch (exception& e)
+				{
+					printf("[!]请输入一个有效的地址！\n");
+					continue;
+				}
+				
 				if (isBreakpoint(addr))
 				{
 					printf("[!]该地址已经存在断点！\n");
@@ -915,7 +926,16 @@ unsigned int CALLBACK threadProc(void *pArg)
 
 			else if (operation.compare("bt") == 0)
 			{
-				LPVOID addr = (LPVOID)(std::stoi(address, nullptr, 16));
+				LPVOID addr;
+				try
+				{
+					addr = (LPVOID)(std::stoi(address, nullptr, 16));
+				}
+				catch (exception& e)
+				{
+					printf("[!]请输入一个有效的地址！\n");
+					continue;
+				}
 				
 				if (isBreakpoint(addr))
 				{
@@ -1021,7 +1041,18 @@ unsigned int CALLBACK threadProc(void *pArg)
 			}
 			else if (operation.compare("bc") == 0)
 			{
-				DWORD size = std::stoi(address, 0, 16);
+
+				DWORD size;
+				try
+				{
+					size = (std::stoi(address, nullptr, 16));
+				}
+				catch (exception& e)
+				{
+					printf("[!]标号错误\n");
+					continue;
+				}
+
 				if (size >= bpList.size() || size < 0)
 				{
 					printf("[!]标号错误\n");
@@ -1071,8 +1102,20 @@ unsigned int CALLBACK threadProc(void *pArg)
 			}
 			else if (operation.compare("s") == 0)
 			{
+
+				DWORD size;
+				try
+				{
+					size = (std::stoi(address, nullptr, 16));
+				}
+				catch (exception& e)
+				{
+					printf("[!]请输入一个有效的数值!\n");
+					continue;
+				}
+
 				if (address.size() > 0)
-					displayStack(de, ct, stoi(address, nullptr, 16));
+					displayStack(de, ct, size);
 				else
 					displayStack(de, ct);
 			}
@@ -1086,16 +1129,23 @@ unsigned int CALLBACK threadProc(void *pArg)
 			}
 			else if (operation.compare("u") == 0)
 			{
-				if (size.length() != 0)
+				if (size.length() > 0)
 				{
-					if (address.size() == 0)
+
+					LPVOID addr;
+					DWORD s;
+					try
 					{
-						disassembly((LPVOID)ct.Eip, stoi(size, nullptr, 16));
+						addr = (LPVOID)(std::stoi(address, nullptr, 16));
+						s = std::stoi(size, nullptr, 16);
 					}
-					else
+					catch (exception& e)
 					{
-						disassembly((LPVOID)stoi(address, nullptr, 16), stoi(size, nullptr, 16));
+						printf("[!]请输入一个有效的数值!\n");
+						continue;
 					}
+					disassembly(addr, s);
+
 				}
 
 				else
@@ -1106,14 +1156,36 @@ unsigned int CALLBACK threadProc(void *pArg)
 					}
 					else
 					{
-						disassembly((LPVOID)stoi(address, nullptr, 16));
+
+						LPVOID addr;
+						try
+						{
+							addr = (LPVOID)(std::stoi(address, nullptr, 16));
+						}
+						catch (exception& e)
+						{
+							printf("[!]请输入一个有效的数值!\n");
+							continue;
+						}
+						disassembly(addr);
 					}
 				}
 			}
 
 			else if (operation.compare("eb") == 0)
 			{
-				byte b = (byte)stoi(size, nullptr, 16);
+
+				byte b;
+				try
+				{
+					b = (byte)stoi(size, nullptr, 16);
+				}
+				catch (exception& e)
+				{
+					printf("[!]请输入一个有效的数值!\n");
+					continue;
+				}
+
 				if (size.length() == 1 || size.length() == 2)
 				{
 					editMemoryByte((LPVOID)stoi(address, nullptr, 16), b);
@@ -1128,7 +1200,20 @@ unsigned int CALLBACK threadProc(void *pArg)
 			{
 				if (size.length() > 0 && size.length() <= 8)
 				{
-					editMemoryDword((LPVOID)stoi(address, nullptr, 16), stoi(size, nullptr, 16));
+					LPVOID addr;
+					DWORD s;
+					try
+					{
+						addr = (LPVOID)(std::stoi(address, nullptr, 16));
+						s = std::stoi(size, nullptr, 16);
+					}
+					catch (exception& e)
+					{
+						printf("[!]请输入一个有效的数值!\n");
+						continue;
+					}
+
+					editMemoryDword(addr, s);
 				}
 				else
 				{
@@ -1140,7 +1225,18 @@ unsigned int CALLBACK threadProc(void *pArg)
 			{
 				if (address.size() > 0 && address.size() <= 8)
 				{
-					LPVOID addr = (LPVOID)(std::stoi(address, nullptr, 16));
+
+					LPVOID addr;
+					try
+					{
+						addr = (LPVOID)(std::stoi(address, nullptr, 16));
+					}
+					catch (exception& e)
+					{
+						printf("[!]请输入一个有效的数值!\n");
+						continue;
+					}
+
 					printf("[*]请输入汇编指令 > ");
 					string cmd;
 					getline(cin, cmd);
@@ -1157,24 +1253,61 @@ unsigned int CALLBACK threadProc(void *pArg)
 			}
 			else if (operation.compare("dd") == 0)
 			{
-				LPVOID addr = (LPVOID)(std::stoi(address, nullptr, 16));
+				LPVOID addr;
+				try
+				{
+					addr = (LPVOID)(std::stoi(address, nullptr, 16));
+				}
+				catch (exception& e)
+				{
+					printf("[!]请输入一个有效的数值!\n");
+					continue;
+				}
+
 				displayMemory(addr, 1);
 			}
 
 			else if (operation.compare("db") == 0)
 			{
-				LPVOID addr = (LPVOID)(std::stoi(address, nullptr, 16));
+				LPVOID addr;
+				try
+				{
+					addr = (LPVOID)(std::stoi(address, nullptr, 16));
+				}
+				catch (exception& e)
+				{
+					printf("[!]请输入一个有效的数值!\n");
+					continue;
+				}
 				displayMemory(addr, 0);
 			}
 		
 			else if (operation.compare("da") == 0)
 			{
-				LPVOID addr = (LPVOID)(std::stoi(address, nullptr, 16));
+				LPVOID addr;
+				try
+				{
+					addr = (LPVOID)(std::stoi(address, nullptr, 16));
+				}
+				catch (exception& e)
+				{
+					printf("[!]请输入一个有效的数值!\n");
+					continue;
+				}
 				displayMemory(addr, 2);
 			}
 			else if (operation.compare("bm") == 0)
 			{
-				LPVOID addr = (LPVOID)(std::stoi(address, nullptr, 16));
+				LPVOID addr;
+				try
+				{
+					addr = (LPVOID)(std::stoi(address, nullptr, 16));
+				}
+				catch (exception& e)
+				{
+					printf("[!]请输入一个有效的数值!\n");
+					continue;
+				}
 				breakpoint* bm = new bp_mm(addr);
 				if (bm->install())
 				{
@@ -1197,7 +1330,16 @@ unsigned int CALLBACK threadProc(void *pArg)
 				{
 					if (HrdBpCount() < 4)
 					{
-						LPVOID addr = (LPVOID)(std::stoi(address, nullptr, 16));
+						LPVOID addr;
+						try
+						{
+							addr = (LPVOID)(std::stoi(address, nullptr, 16));
+						}
+						catch (exception& e)
+						{
+							printf("[!]请输入一个有效的数值!\n");
+							continue;
+						}
 						breakpoint *ba = new bp_hdr(addr);
 						if (ba->install())
 						{
