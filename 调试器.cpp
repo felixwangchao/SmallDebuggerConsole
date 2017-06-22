@@ -128,18 +128,6 @@ int _tmain(int argc, _TCHAR* argv[])
 			 &handle
 			 );
 
-
-
-	//  1.2 附加一个已经运行的进程,以进行调试.
-	//DebugActiveProcess( );
-	// 停止调试回话.
-	//DebugActiveProcessStop( );
-
-	// 2. 等待调试事件
-	//DEBUG_EVENT de = { 0 };
-	//DWORD		dwReturnCode = DBG_CONTINUE;
-	// 3. 处理调试事件
-
 	// 初始化汇编器
 
 
@@ -153,10 +141,7 @@ int _tmain(int argc, _TCHAR* argv[])
 
 			case EXCEPTION_DEBUG_EVENT:
 			{
-				//ypedef struct _EXCEPTION_DEBUG_INFO {
-				//	EXCEPTION_RECORD ExceptionRecord;// 异常记录:异常的地址,异常代码,异常的附加信息
-				//	DWORD dwFirstChance;// 该异常是正在进行第一次分发,还是第二次分发
-				//} EXCEPTION_DEBUG_INFO , *LPEXCEPTION_DEBUG_INFO;
+
 				// 1. 将反汇编信息输出, 准备和用户进行交互
 				// 2. 获取OPCODE
 				ct = { CONTEXT_CONTROL | CONTEXT_DEBUG_REGISTERS | CONTEXT_SEGMENTS | CONTEXT_INTEGER };
@@ -172,7 +157,6 @@ int _tmain(int argc, _TCHAR* argv[])
 					if (bHdrBp == true)
 					{
 						bHdrBp = false;
-						//pHdrBp->install();
 						ReinstallBp();
 						pHdrBp = nullptr;
 						dwReturnCode = DBG_EXCEPTION_HANDLED;
@@ -382,34 +366,15 @@ int _tmain(int argc, _TCHAR* argv[])
 					printf("symmoudule64 init failed\n");
 				}
 				
-				//ypedef struct _CREATE_PROCESS_DEBUG_INFO {
-				//	HANDLE hFile;  // 被创建进程的可执行文件的文件句柄
-				//	HANDLE hProcess;// 被创建进程的进程句柄
-				//	HANDLE hThread;
-				//	LPVOID lpBaseOfImage;// 进程的加载基址
-				//	DWORD dwDebugInfoFileOffset;
-				//	DWORD nDebugInfoSize;
-				//	LPVOID lpThreadLocalBase;
-				//	LPTHREAD_START_ROUTINE lpStartAddress; // OEP 程序入口点
-				//	LPVOID lpImageName;
-				//	WORD fUnicode;
-				// CREATE_PROCESS_DEBUG_INFO , *LPCREATE_PROCESS_DEBUG_INFO;
-				//DEBUG( "进程创建调试事件\n" );
 				break;
 			case CREATE_THREAD_DEBUG_EVENT:
 
-				//typedef struct _CREATE_THREAD_DEBUG_INFO {
-				//	HANDLE hThread;
-				//	LPVOID lpThreadLocalBase;
-				//	LPTHREAD_START_ROUTINE lpStartAddress;// 线程回调函数的地址
-				//} CREATE_THREAD_DEBUG_INFO , *LPCREATE_THREAD_DEBUG_INFO;
-				//DEBUG( "线程创建调试事件\n" );
 				break;
 			case EXIT_PROCESS_DEBUG_EVENT:
-				//DEBUG( "进程退出事件\n" );
+
 				break;
 			case EXIT_THREAD_DEBUG_EVENT:
-				//DEBUG( "线程退出事件\n" );
+
 				break;
 			case LOAD_DLL_DEBUG_EVENT:
 			{
@@ -428,23 +393,15 @@ int _tmain(int argc, _TCHAR* argv[])
 				
 				CloseHandle(de.u.LoadDll.hFile);
 			}
-				//typedef struct _LOAD_DLL_DEBUG_INFO {
-				//	HANDLE hFile; // dll的文件句柄
-				//	LPVOID lpBaseOfDll;// dll加载基址
-				//	DWORD dwDebugInfoFileOffset;
-				//	DWORD nDebugInfoSize;
-				//	LPVOID lpImageName;
-				//	WORD fUnicode;
-				//} LOAD_DLL_DEBUG_INFO , *LPLOAD_DLL_DEBUG_INFO;
-				//DEBUG( "DLL加载事件\n" );
+
 				break;
 			case OUTPUT_DEBUG_STRING_EVENT:
-				//DEBUG( "调试信息输出\n" );
+
 				break;
 			case RIP_EVENT:
 				break;
 			case UNLOAD_DLL_DEBUG_EVENT:
-				//DEBUG( "DLL卸载事件\n" );
+
 				break;
 		}
 
@@ -1395,6 +1352,10 @@ unsigned int CALLBACK threadProc(void *pArg)
 				{
 					printf("[!]请输入一个合法的地址！\n");
 				}
+			}
+			else
+			{
+				printf("[!]请输入一个有效的指令！\n");
 			}
 		}
 	}
