@@ -795,11 +795,13 @@ void displayHelp()
 		<< "\ta address\t\t在该地址写入汇编代码\n"
 		<< "4.显示类操作\n"
 		<< "\th\t\t\t显示帮助信息\n"
+		<< "\tk\t\t\t显示调用堆栈\n"
 		<< "\tr\t\t\t显示寄存器信息\n"
 		<< "\tbl\t\t\t显示断点列表\n"
 		<< "\tlm\t\t\t显示模块信息\n"
 		<< "\texchain\t\t\t显示异常处理链\n"
 		<< "\ts (num)\t\t\t显示栈信息,num控制条数\n"
+		<< "\tx address\t\t显示一个地址在哪个代码块\n"
 		<< "\tu (addr) (num)\t\t反汇编addr指定的地址num条\n"
 		<< "\tdd address\t\t显示该地址的内存，以四字节为单位\n"
 		<< "\tdb address\t\t显示该地址的内存，以字节为单位\n"
@@ -1541,7 +1543,7 @@ void getAddressInfo(DWORD addr)
 	{
 		DWORD dwBase = GetSymAddress(pszName.c_str());
 		DWORD dwLine = getAsmLineNum(dwBase, addr - dwBase);
-		printf("%08x\t%s\t%d行\n", addr,pszName.c_str(), dwLine+1);
+		printf("%08x\t%s +%d行\n", addr,pszName.c_str(), dwLine+1);
 	}
 }
 
@@ -1564,7 +1566,6 @@ void stackBacktracking()
 	do 
 	{
 		getAddressInfo(buff[1]);
-		ZeroMemory(buff, 8);
 		ReadProcessMemory(OpenProcess(PROCESS_ALL_ACCESS, FALSE, de.dwProcessId),
 			(LPVOID)buff[0],
 			buff,
@@ -1605,7 +1606,6 @@ DWORD getImageRange()
 
 	MODULEENTRY32 moduleInfo = { sizeof(MODULEENTRY32) };
 
-	printf("加载基址 | 模块大小 |        模块名         |   模块路径\n");
 	Module32First(hModuleSnap, &moduleInfo);
 	do
 	{
@@ -1630,7 +1630,6 @@ void dump()
 	}
 	char *buff = new char[dwSize];
 	ReadProcessMemory(hProcess, (LPVOID)dwBaseOfImage, buff, dwSize, &dwRead);
-	printf("%s\n", buff);
 
 	HANDLE hFile;
 	hFile = CreateFile(L"Mydump.dmp", 
