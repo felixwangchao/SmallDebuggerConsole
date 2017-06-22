@@ -29,10 +29,11 @@ using std::vector;
 #define PDB_PATH "E:\\"
 
 #define SOFTWARE_BREAKPOINT			0x1
-#define HARDWARE_BREAKPOINT			0x2
-#define HARDWARE_RW_BREAKPOINT		0x3
-#define CONDITION_BREAKPOINT		0x4
-#define MEMORY_BREAKPOINT			0x5
+#define STEP_OUT_BREAKPOINT			0x2
+#define CONDITION_BREAKPOINT		0x3
+#define HARDWARE_BREAKPOINT			0x4
+#define HARDWARE_RW_BREAKPOINT		0x5
+#define MEMORY_BREAKPOINT			0x6
 
 // 调试相关的全局变量
 extern cs_opt_mem memop;

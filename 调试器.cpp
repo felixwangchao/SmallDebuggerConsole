@@ -12,6 +12,7 @@ void RepairMemory();
 void ReinstallBp();
 breakpoint* findHdrBp(LPVOID addr);
 bp_mm* findMMBp(LPVOID addr);
+bp_int3* getCurrentStepBp(LPVOID addr, DWORD& dwNum);
 bool isBreakpoint(LPVOID addr);
 void editMemoryByte(LPVOID addr, byte b);
 void editMemoryDword(LPVOID, DWORD);
@@ -21,6 +22,7 @@ void displayExport(DWORD);
 void displayModule();
 void displayMemory(LPVOID addr, int mode);
 void disassembly(LPVOID addr, int nNum = 7);
+bool delBp(DWORD size);
 
 // 单步步过
 void IsCall(DWORD & nextCall);
@@ -306,6 +308,16 @@ int _tmain(int argc, _TCHAR* argv[])
 						}
 						printf("Result : %d\n",bResult);
 						bCdBrNotTrigged = !bResult;
+					}
+					else
+					{
+						DWORD dwNum;
+						bp = getCurrentStepBp((LPVOID)ct.Eip, dwNum);
+						if (bp != nullptr)
+						{
+							bp->repair();
+							delBp(dwNum);
+						}
 					}
 
 					setBreakpoint_tf();
@@ -851,6 +863,7 @@ unsigned int CALLBACK threadProc(void *pArg)
 					}
 					string msg = "步过断点";
 					breakpoint *bp = new bp_int3((LPVOID)nextCall,msg);
+					bp->type = STEP_OUT_BREAKPOINT;
 
 					if (bp->install())
 					{
@@ -862,6 +875,7 @@ unsigned int CALLBACK threadProc(void *pArg)
 					else
 					{
 						printf("[!]断点安装失败！\n");
+						delete bp;
 						break;
 					}
 				}
@@ -1290,6 +1304,23 @@ bp_int3* getCurrentConditionBp(LPVOID addr)
 	return nullptr;
 }
 
+bp_int3* getCurrentStepBp(LPVOID addr, DWORD& dwNum)
+{
+	DWORD i = 0;
+	vector <breakpoint*>::iterator iter;
+	for (iter = bpList.begin(); iter != bpList.end(); ++iter)
+	{
+
+		if ((*iter)->address == addr && (*iter)->type == STEP_OUT_BREAKPOINT)
+		{
+			dwNum = i;
+			return (bp_int3*)(*iter);
+		}
+		i++;
+	}
+	return nullptr;
+}
+
 void displayModule()
 {
 	HANDLE hModuleSnap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE,dwPid);
@@ -1390,7 +1421,7 @@ void displayModeDword(LPVOID addr, char* buff)
 			for (int k = 0; k < 4; k++)
 			{
 				byte c = (byte)buff[16 * i + 4 * j + (3 - k)];
-				printf("%x", unsigned int(c));
+				printf("%02x", unsigned int(c));
 			}
 			printf(" ");
 		}
