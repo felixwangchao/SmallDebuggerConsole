@@ -26,7 +26,7 @@ using std::vector;
 #endif // _DEBUG
 
 #define PATH L"E:\\hellocpp.exe"
-#define PDB_PATH "E:\\"
+#define PDB_PATH "C:\\SYMBOLS\\"
 
 #define SOFTWARE_BREAKPOINT			0x1
 #define STEP_OUT_BREAKPOINT			0x2
@@ -122,5 +122,35 @@ typedef struct _DBG_REG7{
 	unsigned RW3 : 2;
 	unsigned LEN3 : 2;
 }DBG_REG7, *PDBG_REG7;
+
+
+typedef LONG NTSTATUS;
+typedef DWORD KPRIORITY;
+typedef WORD UWORD;
+
+typedef struct _CLIENT_ID
+{
+	PVOID UniqueProcess;
+	PVOID UniqueThread;
+} CLIENT_ID, *PCLIENT_ID;
+
+typedef struct _THREAD_BASIC_INFORMATION
+{
+	NTSTATUS                ExitStatus;
+	PVOID                   TebBaseAddress;
+	CLIENT_ID               ClientId;
+	KAFFINITY               AffinityMask;
+	KPRIORITY               Priority;
+	KPRIORITY               BasePriority;
+} THREAD_BASIC_INFORMATION, *PTHREAD_BASIC_INFORMATION;
+
+enum THREADINFOCLASS
+{
+	ThreadBasicInformation,
+};
+
+EXCEPTION_REGISTRATION_RECORD* GetThreadSEHAddress(HANDLE hThread);
+
+
 
 

@@ -23,6 +23,10 @@ void displayModule();
 void displayMemory(LPVOID addr, int mode);
 void disassembly(LPVOID addr, int nNum = 7);
 bool delBp(DWORD size);
+void displayExchain();
+void getAddressInfo(DWORD addr);
+void stackBacktracking();
+
 
 // 单步步过
 void IsCall(DWORD & nextCall);
@@ -791,10 +795,12 @@ void displayHelp()
 		<< "\ta address\t\t在该地址写入汇编代码\n"
 		<< "4.显示类操作\n"
 		<< "\th\t\t\t显示帮助信息\n"
-		<< "\ts\t\t\t显示栈信息\n"
 		<< "\tr\t\t\t显示寄存器信息\n"
 		<< "\tbl\t\t\t显示断点列表\n"
 		<< "\tlm\t\t\t显示模块信息\n"
+		<< "\texchain\t\t\t显示异常处理链\n"
+		<< "\ts (num)\t\t\t显示栈信息,num控制条数\n"
+		<< "\tu (addr) (num)\t\t反汇编addr指定的地址num条\n"
 		<< "\tdd address\t\t显示该地址的内存，以四字节为单位\n"
 		<< "\tdb address\t\t显示该地址的内存，以字节为单位\n"
 		<< "\tda address\t\t显示该地址处的ascii字符串\n"
@@ -1062,6 +1068,28 @@ unsigned int CALLBACK threadProc(void *pArg)
 					delBp(size);
 				}
 			}
+			else if (operation.compare("x") == 0)
+			{
+				if (address.size() > 0)
+				{
+					DWORD addr;
+					try
+					{
+						addr = stoi(address,0,16);
+					}
+					catch (exception& e)
+					{
+						printf("[!]请输入一个有效的地址");
+						continue;
+					}
+					
+					getAddressInfo(addr);
+				}
+			}
+			else if (operation.compare("k") == 0)
+			{
+				stackBacktracking();
+			}
 			else if (operation.compare("r") == 0)
 			{
 				displayRegisters(ct);
@@ -1069,6 +1097,10 @@ unsigned int CALLBACK threadProc(void *pArg)
 			else if (operation.compare("h") == 0)
 			{
 				displayHelp();
+			}
+			else if (operation.compare("exchain") == 0)
+			{
+				displayExchain();
 			}
 			else if (operation.compare("import") == 0)
 			{
@@ -1463,6 +1495,86 @@ bp_int3* getCurrentStepBp(LPVOID addr, DWORD& dwNum)
 	return nullptr;
 }
 
+DWORD getAsmLineNum(DWORD dwBase, DWORD dwRange)
+{
+	DWORD dwRead = 0;
+	char* buff = new char[dwRange + 16];
+	ReadProcessMemory(hProcess,
+		(LPVOID)dwBase,
+		buff,
+		dwRange+16,
+		&dwRead
+		);
+
+	// 反汇编代码
+	cs_insn* ins = nullptr;
+
+	int count = 0;
+	count = cs_disasm(handle,
+		(uint8_t*)buff,
+		dwRange+16,
+		(DWORD)dwBase,
+		0,
+		&ins
+		);
+
+	for (int i = 0; i < count; i++)
+	{
+		if (ins[i].address > (dwBase + dwRange))
+			return i - 1;
+		else if (ins[i].address == (dwBase + dwRange))
+			return i;
+	}
+	delete[] buff;
+	cs_free(ins, count);
+}
+
+void getAddressInfo(DWORD addr)
+{
+	string pszName;
+	GetSymName(addr, pszName);
+	if (pszName.size() == 0)
+	{
+		printf("%08x\t没有找到符号信息\n");
+	}
+	else
+	{
+		DWORD dwBase = GetSymAddress(pszName.c_str());
+		DWORD dwLine = getAsmLineNum(dwBase, addr - dwBase);
+		printf("%08x\t%s\t%d行\n", addr,pszName.c_str(), dwLine+1);
+	}
+}
+
+void stackBacktracking()
+{
+	DWORD* buff = new DWORD[2];
+
+	// 首先获取当前的
+	getAddressInfo(ct.Eip);
+
+	// 读取栈信息
+	DWORD dwRead = 0;
+	ReadProcessMemory(OpenProcess(PROCESS_ALL_ACCESS, FALSE, de.dwProcessId),
+		(LPVOID)ct.Ebp,
+		buff,
+		8,
+		&dwRead
+		);
+
+	do 
+	{
+		getAddressInfo(buff[1]);
+		ZeroMemory(buff, 8);
+		ReadProcessMemory(OpenProcess(PROCESS_ALL_ACCESS, FALSE, de.dwProcessId),
+			(LPVOID)buff[0],
+			buff,
+			8,
+			&dwRead
+			);
+		
+	} while (buff[0]!=0);
+}
+
 void displayModule()
 {
 	HANDLE hModuleSnap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE,dwPid);
@@ -1533,6 +1645,55 @@ void dump()
 	printf("Size:%x  --  Written:%x\n", dwSize, dwDataLen);
 	CloseHandle(hFile);
 	delete[] buff;
+}
+
+void displayExchain()
+{
+	EXCEPTION_REGISTRATION_RECORD* fs0;
+	HANDLE hThread = OpenThread(THREAD_ALL_ACCESS, FALSE, de.dwThreadId);
+	fs0 = GetThreadSEHAddress(hThread);
+
+	DWORD dwRead = 0;
+	EXCEPTION_REGISTRATION_RECORD except = { 0 };
+	ReadProcessMemory(hProcess, (LPVOID)fs0, &except, sizeof(EXCEPTION_REGISTRATION_RECORD), &dwRead);
+
+	DWORD dwCount = -1;
+
+	do 
+	{
+		dwCount++;
+		string symbol;
+		GetSymName((DWORD)except.Handler, symbol);
+
+		printf("-----------------[%d]--------------\n",dwCount);
+		printf("Next:\t%08x\nHandle:\t%08x", except.Next, except.Handler);
+		if (symbol.size() > 0)
+		{
+			printf("\t<%s>\n", symbol.c_str());
+		}
+		else
+		{
+			printf("\n ");
+		}
+		ReadProcessMemory(hProcess, (LPVOID)except.Next, &except, sizeof(EXCEPTION_REGISTRATION_RECORD), &dwRead);
+		
+	} while (except.Next != (LPVOID)-1);
+
+	string symbol;
+	GetSymName((DWORD)except.Handler, symbol);
+
+	dwCount++;
+	printf("-----------------[%d]--------------\n", dwCount);
+	printf("Handle:\t%08x ", except.Handler);
+	if (symbol.size() > 0)
+	{
+		printf("\t<%s>\n", symbol.c_str());
+	}
+	else
+	{
+		printf("\n ");
+	}
+
 }
 
 void displayModeByte(LPVOID addr, char* buff)
