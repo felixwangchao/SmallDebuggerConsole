@@ -756,6 +756,7 @@ void displayHelp()
 		<< "\tr\t\t\t显示寄存器信息\n"
 		<< "\tbl\t\t\t显示断点列表\n"
 		<< "\tlm\t\t\t显示模块信息\n"
+		<< "\tcls\t\t\t清空屏幕\n"
 		<< "\texchain\t\t\t显示异常处理链\n"
 		<< "\ts (num)\t\t\t显示栈信息,num控制条数\n"
 		<< "\tx address\t\t显示一个地址在哪个代码块\n"
@@ -1286,6 +1287,10 @@ unsigned int CALLBACK threadProc(void *pArg)
 					continue;
 				}
 				displayMemory(addr, 2);
+			}
+			else if (operation.compare("cls")==0)
+			{
+				system("cls");
 			}
 			else if (operation.compare("bm") == 0)
 			{
