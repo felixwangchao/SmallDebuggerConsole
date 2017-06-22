@@ -12,6 +12,10 @@ public:
 public:
 	breakpoint(LPVOID address) :address(address){}
 	breakpoint(){}
+	bool operator < (const breakpoint& m) const
+	{
+		return this->type > m.type;
+	}
 	virtual ~breakpoint(){};
 	virtual bool install()=0;
 	virtual void repair()=0;

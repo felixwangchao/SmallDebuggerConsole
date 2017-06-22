@@ -63,6 +63,9 @@ extern bool bIsTF;
 // 是否触发条件断点
 extern bool bCdBrNotTrigged;
 
+// 模块基址
+extern DWORD dwBaseOfImage;
+
 
 
 // eflags结构体

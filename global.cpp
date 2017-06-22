@@ -14,6 +14,8 @@ HANDLE g_WaitStop = 0;
 HANDLE hProcess = 0;
 DWORD dwPid = 0;
 
+DWORD dwBaseOfImage = 0;
+
 bool bIsMM = false;
 bool bNeedStop = false;
 bool bIsTF = false;

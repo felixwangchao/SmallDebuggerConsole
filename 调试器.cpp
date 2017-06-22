@@ -2,6 +2,7 @@
 #include "global.h"
 #include "display.h"
 #include "breakpoint.h"
+#include <algorithm>
 
 vector <breakpoint*> bpList;
 
@@ -14,6 +15,9 @@ bp_mm* findMMBp(LPVOID addr);
 bool isBreakpoint(LPVOID addr);
 void editMemoryByte(LPVOID addr, byte b);
 void editMemoryDword(LPVOID, DWORD);
+void dump();
+void displayImport(DWORD);
+void displayExport(DWORD);
 void displayModule();
 void displayMemory(LPVOID addr, int mode);
 void disassembly(LPVOID addr, int nNum = 7);
@@ -27,6 +31,11 @@ BOOL GetSymName(SIZE_T nAddress, string& strName);
 
 bp_int3* getCurrentConditionBp(LPVOID addr);
 unsigned int CALLBACK threadProc(void *pArg);
+
+bool cmp(const breakpoint* x, const breakpoint* y)
+{
+	return x->type < y->type;
+}
 
 
 // 记录当前断点
@@ -124,7 +133,6 @@ int _tmain(int argc, _TCHAR* argv[])
 	//DEBUG_EVENT de = { 0 };
 	//DWORD		dwReturnCode = DBG_CONTINUE;
 	// 3. 处理调试事件
-
 
 	// 初始化汇编器
 
@@ -337,6 +345,7 @@ int _tmain(int argc, _TCHAR* argv[])
 				dwOEp = (DWORD)de.u.CreateProcessInfo.lpStartAddress;
 				hProcess = (HANDLE)de.u.CreateProcessInfo.hProcess;
 				dwPid = GetProcessId(hProcess);
+				dwBaseOfImage = (DWORD)de.u.CreateProcessInfo.lpBaseOfImage;
 
 				if (SymInitialize(hProcess, PDB_PATH, FALSE) == TRUE)
 				{
@@ -463,6 +472,282 @@ bool delBp(DWORD size)
 	return true;
 }
 
+void displayExport(DWORD dwBaseOfImage)
+{
+	// 获取DOS头
+	DWORD addr = 0;
+
+	char* dosHeader = new char[sizeof(IMAGE_DOS_HEADER)];
+	DWORD dwRead = 0;
+	ReadProcessMemory(hProcess,
+		(LPVOID)dwBaseOfImage,
+		dosHeader,
+		sizeof(IMAGE_DOS_HEADER),
+		&dwRead);
+
+	WORD magic = 0x5a4d;
+	if (((IMAGE_DOS_HEADER*)dosHeader)->e_magic != magic)
+	{
+		printf("[!]不是有效的PE文件！\n");
+		return;
+	}
+
+	// 获取NT头地址
+	addr = ((IMAGE_DOS_HEADER*)dosHeader)->e_lfanew + dwBaseOfImage;
+	delete[] dosHeader;
+	char* ntHeader = new char[sizeof(IMAGE_NT_HEADERS) + sizeof(IMAGE_OPTIONAL_HEADER32) + sizeof(IMAGE_DATA_DIRECTORY)*16 + 100];
+	ReadProcessMemory(hProcess,
+		(LPVOID)addr,
+		ntHeader,
+		sizeof(IMAGE_NT_HEADERS) + sizeof(IMAGE_OPTIONAL_HEADER32) + sizeof(IMAGE_DATA_DIRECTORY) * 16 + 100,
+		&dwRead);
+
+	magic = 0x4550;
+	if (((IMAGE_NT_HEADERS*)ntHeader)->Signature != magic)
+	{
+		printf("[!]不是有效的PE文件！\n");
+		return;
+	}
+	
+	// 获取可选头
+	IMAGE_OPTIONAL_HEADER32 pOptHdr = ((IMAGE_NT_HEADERS*)ntHeader)->OptionalHeader;
+	IMAGE_DATA_DIRECTORY* pDataDir = pOptHdr.DataDirectory;
+	DWORD dwExpTabRva = pDataDir[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
+	delete[] ntHeader;
+
+	if (dwExpTabRva == 0)
+	{
+		printf("[*]导出表为空\n");
+		return;
+	}
+
+	addr = dwExpTabRva + dwBaseOfImage;
+	IMAGE_EXPORT_DIRECTORY *pExp = new IMAGE_EXPORT_DIRECTORY;
+
+	ReadProcessMemory(hProcess,
+		(LPVOID)addr,
+		pExp,
+		sizeof(IMAGE_EXPORT_DIRECTORY),
+		&dwRead);
+
+	// 打印DLL名
+	char* pDllName = new char[50];
+	DWORD dwDllName = pExp->Name + dwBaseOfImage;
+	ReadProcessMemory(hProcess,
+		(LPVOID)dwDllName,
+		pDllName,
+		50,
+		&dwRead);
+
+	printf("DLL : %s\n", pDllName);
+	delete[] pDllName;
+
+	// 获取导出地址表，导出名称表，导出序号表
+	DWORD dwAddrTabRva = pExp->AddressOfFunctions + dwBaseOfImage;
+	DWORD dwNameTabRva = pExp->AddressOfNames + dwBaseOfImage;
+	DWORD dwOrdinalRva = pExp->AddressOfNameOrdinals + dwBaseOfImage;
+
+	DWORD dwCount = pExp->NumberOfFunctions;
+	DWORD dwNameCount = pExp->NumberOfNames;
+
+	DWORD *pAddrTab = new DWORD[dwCount];
+	DWORD *pNameTab = new DWORD[dwNameCount];
+	WORD *pOrdinalTab = new WORD[dwNameCount];
+
+	ReadProcessMemory(hProcess,
+		(LPVOID)dwAddrTabRva,
+		pAddrTab,
+		sizeof(DWORD)*dwCount,
+		&dwRead);
+	ReadProcessMemory(hProcess,
+		(LPVOID)dwNameTabRva,
+		pNameTab,
+		sizeof(DWORD)*dwNameCount,
+		&dwRead);
+	ReadProcessMemory(hProcess,
+		(LPVOID)dwOrdinalRva,
+		pOrdinalTab,
+		sizeof(WORD)*dwNameCount,
+		&dwRead);
+
+	for (DWORD i = 0; i < dwCount; i++)
+	{
+		printf("\tRVA : %08x\t", pAddrTab[i]);
+
+		DWORD j = 0;
+		
+		for (; j < dwNameCount; j++) {
+			if (i == pOrdinalTab[j]) {
+
+				DWORD dwFunName = pNameTab[j] + dwBaseOfImage;
+
+				char *pFunName = new char[100];
+				ZeroMemory(pFunName, 100);
+
+				ReadProcessMemory(hProcess,
+					(LPVOID)dwFunName,
+					pFunName,
+					100,
+					&dwRead);
+
+				printf("%s\n", pFunName);
+				delete[] pFunName;
+				break;
+			}
+		}
+		if (j >= dwNameCount) {
+
+			if (pAddrTab[i] != 0) {
+				printf("ordinals:[%d]\n", pExp->Base + i);
+			}
+		}
+	}
+
+	delete[] pAddrTab;
+	delete[] pNameTab;
+	delete[] pOrdinalTab;
+	delete[] pExp;
+}
+
+void displayImport(DWORD dwBaseOfImage)
+{
+	// 获取DOS头
+	DWORD addr = 0;
+
+	char* dosHeader = new char[sizeof(IMAGE_DOS_HEADER)];
+	DWORD dwRead = 0;
+	ReadProcessMemory(hProcess,
+		(LPVOID)dwBaseOfImage,
+		dosHeader,
+		sizeof(IMAGE_DOS_HEADER),
+		&dwRead);
+	WORD magic = 0x5a4d;
+	if (((IMAGE_DOS_HEADER*)dosHeader)->e_magic != magic)
+	{
+		printf("[!]不是有效的PE文件！\n");
+		return;
+	}
+
+	// 获取NT头地址
+	addr = ((IMAGE_DOS_HEADER*)dosHeader)->e_lfanew + dwBaseOfImage;
+	delete[] dosHeader;
+	char* ntHeader = new char[sizeof(IMAGE_NT_HEADERS) + sizeof(IMAGE_OPTIONAL_HEADER32) + sizeof(IMAGE_DATA_DIRECTORY) * 16 + 100];
+	ReadProcessMemory(hProcess,
+		(LPVOID)addr,
+		ntHeader,
+		sizeof(IMAGE_NT_HEADERS) + sizeof(IMAGE_OPTIONAL_HEADER32) + sizeof(IMAGE_DATA_DIRECTORY) * 16 + 100,
+		&dwRead);
+
+	magic = 0x4550;
+	if (((IMAGE_NT_HEADERS*)ntHeader)->Signature != magic)
+	{
+		printf("[!]不是有效的PE文件！\n");
+		return;
+	}
+
+	// 获取可选头
+	IMAGE_OPTIONAL_HEADER32 pOptHdr = ((IMAGE_NT_HEADERS*)ntHeader)->OptionalHeader;
+	IMAGE_DATA_DIRECTORY* pDataDir = pOptHdr.DataDirectory;
+	DWORD dwImpTabRva = pDataDir[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
+
+	if (dwImpTabRva == 0)
+	{
+		printf("[*]导入表为空\n");
+		return;
+	}
+
+	addr = dwImpTabRva + dwBaseOfImage;
+	IMAGE_IMPORT_DESCRIPTOR *pImp = new IMAGE_IMPORT_DESCRIPTOR;
+	delete[] ntHeader;
+
+	ReadProcessMemory(hProcess,
+		(LPVOID)addr,
+		pImp,
+		sizeof(IMAGE_IMPORT_DESCRIPTOR),
+		&dwRead);
+
+	char* pDllName;
+
+	while (pImp->Characteristics != 0)
+	{
+		DWORD dwDllName = dwBaseOfImage + pImp->Name;
+		pDllName = new char[50];
+		ReadProcessMemory(hProcess,
+			(LPVOID)dwDllName,
+			pDllName,
+			50,
+			&dwRead);
+		printf("DLL %s\n", pDllName);
+		delete[] pDllName;
+		pDllName = nullptr;
+
+		// 获取INT 与 IAT
+		IMAGE_THUNK_DATA32 *pInt = new IMAGE_THUNK_DATA32;
+		IMAGE_THUNK_DATA32 *pIat = new IMAGE_THUNK_DATA32;
+		DWORD dwINT = dwBaseOfImage + ((IMAGE_IMPORT_DESCRIPTOR*)pImp)->OriginalFirstThunk;
+		DWORD dwIAT = dwBaseOfImage + ((IMAGE_IMPORT_DESCRIPTOR*)pImp)->FirstThunk;
+		ReadProcessMemory(hProcess,
+			(LPVOID)dwINT,
+			pInt,
+			sizeof(IMAGE_THUNK_DATA32),
+			&dwRead);
+		ReadProcessMemory(hProcess,
+			(LPVOID)dwIAT,
+			pIat,
+			sizeof(IMAGE_THUNK_DATA32),
+			&dwRead);
+		
+		while (((IMAGE_THUNK_DATA32*)pInt)->u1.AddressOfData)
+		{
+			IMAGE_THUNK_DATA32* pINT = (IMAGE_THUNK_DATA32*)pInt;
+			IMAGE_THUNK_DATA32* pIAT = (IMAGE_THUNK_DATA32*)pIat;
+			if (IMAGE_SNAP_BY_ORDINAL(pINT->u1.Ordinal) == TRUE)
+			{
+				printf("\t序号: %08x\t%d\n", *(DWORD*)pIAT, LOWORD(pINT->u1.Ordinal));
+			}
+			else
+			{
+				DWORD dwImpName = dwBaseOfImage + pINT->u1.Function;
+				char* pImpName = new char[sizeof(IMAGE_IMPORT_BY_NAME)+100];
+				ReadProcessMemory(hProcess,
+					(LPVOID)dwImpName,
+					pImpName,
+					sizeof(IMAGE_IMPORT_BY_NAME)+100,
+					&dwRead);
+
+				IMAGE_IMPORT_BY_NAME* pIMPname = ((IMAGE_IMPORT_BY_NAME*)pImpName);
+
+
+				printf("\t[%08d]%08x\t%s\n", pIMPname->Hint, *(DWORD*)pIAT, ((IMAGE_IMPORT_BY_NAME*)pImpName)->Name);
+				delete [] pImpName;
+			}
+			dwINT = dwINT + sizeof(IMAGE_THUNK_DATA32);
+			dwIAT = dwIAT + sizeof(IMAGE_THUNK_DATA32);
+			ReadProcessMemory(hProcess,
+				(LPVOID)dwINT,
+				pInt,
+				sizeof(IMAGE_THUNK_DATA32),
+				&dwRead);
+			ReadProcessMemory(hProcess,
+				(LPVOID)dwIAT,
+				pIat,
+				sizeof(IMAGE_THUNK_DATA32),
+				&dwRead);
+		}
+
+		delete pIat;
+		delete pInt;
+
+		addr = addr + sizeof(IMAGE_IMPORT_DESCRIPTOR);
+		ReadProcessMemory(hProcess,
+			(LPVOID)addr,
+			pImp,
+			sizeof(IMAGE_IMPORT_DESCRIPTOR),
+			&dwRead);
+	}
+	delete pImp;
+}
+
 void displayBPList()
 {
 	int i = 0;
@@ -485,6 +770,7 @@ void displayHelp()
 		<< "\tbp address\t\t软件断点\n"
 		<< "\tba address\t\t硬件断点\n"
 		<< "\tbm address\t\t内存断点\n"
+		<< "\tbt address\t\t条件断点\n"
 		<< "\tbapi name\t\tAPI断点\n"
 		<< "\tbc num\t\t\t清除第num号断点\n"
 		<< "3.内存编辑类操作\n"
@@ -500,6 +786,8 @@ void displayHelp()
 		<< "\tdd address\t\t显示该地址的内存，以四字节为单位\n"
 		<< "\tdb address\t\t显示该地址的内存，以字节为单位\n"
 		<< "\tda address\t\t显示该地址处的ascii字符串\n"
+		<< "\texport address\t\t显示以该地址为基址的导出表\n"
+		<< "\timport address\t\t显示以该地址为基址的导入表\n"
 		<< endl;
 }
 
@@ -567,6 +855,7 @@ unsigned int CALLBACK threadProc(void *pArg)
 					if (bp->install())
 					{
 						bpList.push_back(bp);
+						sort(bpList.begin(), bpList.end(),cmp);
 						SetEvent(g_WaitRun);
 						break;
 					}
@@ -601,6 +890,7 @@ unsigned int CALLBACK threadProc(void *pArg)
 				if (bp->install())
 				{
 					bpList.push_back(bp);
+					sort(bpList.begin(), bpList.end(),cmp);
 					bp->repair();
 				}
 				else
@@ -672,6 +962,7 @@ unsigned int CALLBACK threadProc(void *pArg)
 				if (bp->install())
 				{
 					bpList.push_back(bp);
+					sort(bpList.begin(), bpList.end(),cmp);
 					bp->repair();
 				}
 				else
@@ -701,6 +992,7 @@ unsigned int CALLBACK threadProc(void *pArg)
 					if (bp->install())
 					{
 						bpList.push_back(bp);
+						sort(bpList.begin(), bpList.end(),cmp);
 						bp->repair();
 					}
 					else
@@ -722,7 +1014,6 @@ unsigned int CALLBACK threadProc(void *pArg)
 				}
 				else
 				{
-					//printf("尝试删除标号:%d的断点\n", size);
 					delBp(size);
 				}
 			}
@@ -733,6 +1024,36 @@ unsigned int CALLBACK threadProc(void *pArg)
 			else if (operation.compare("h") == 0)
 			{
 				displayHelp();
+			}
+			else if (operation.compare("import") == 0)
+			{
+				DWORD addr;
+				try
+				{
+					addr = std::stoi(address,nullptr,16);
+				}
+				catch (exception& e)
+				{
+					cout << "[!]请输入一个有效的地址！" << endl;
+					continue;
+				}
+
+				displayImport(addr);
+			}
+			else if (operation.compare("export") == 0)
+			{
+				DWORD addr;
+				try
+				{
+					addr = std::stoi(address, nullptr, 16);
+				}
+				catch (exception& e)
+				{
+					cout << "[!]请输入一个有效的地址！" << endl;
+					continue;
+				}
+
+				displayExport(addr);
 			}
 			else if (operation.compare("s") == 0)
 			{
@@ -816,7 +1137,10 @@ unsigned int CALLBACK threadProc(void *pArg)
 					printf("[!]请输入一个有效的地址\n");
 				}
 			}
-
+			else if (operation.compare("dump") == 0)
+			{
+				dump();
+			}
 			else if (operation.compare("dd") == 0)
 			{
 				LPVOID addr = (LPVOID)(std::stoi(address, nullptr, 16));
@@ -841,6 +1165,7 @@ unsigned int CALLBACK threadProc(void *pArg)
 				if (bm->install())
 				{
 					bpList.push_back(bm);
+					sort(bpList.begin(), bpList.end(),cmp);
 					bm->repair();
 				}
 				else
@@ -863,6 +1188,7 @@ unsigned int CALLBACK threadProc(void *pArg)
 						if (ba->install())
 						{
 							bpList.push_back(ba);
+							sort(bpList.begin(), bpList.end(),cmp);
 							ba->repair();
 						}
 						else
@@ -983,6 +1309,57 @@ void displayModule()
 		wprintf(L"%s\n", moduleInfo.szExePath);
 
 	} while (Module32Next(hModuleSnap, &moduleInfo));
+}
+
+DWORD getImageRange()
+{
+	HANDLE hModuleSnap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, dwPid);
+
+	if (hModuleSnap == INVALID_HANDLE_VALUE)
+		return 0;
+
+	MODULEENTRY32 moduleInfo = { sizeof(MODULEENTRY32) };
+
+	printf("加载基址 | 模块大小 |        模块名         |   模块路径\n");
+	Module32First(hModuleSnap, &moduleInfo);
+	do
+	{
+		if ((DWORD)moduleInfo.modBaseAddr == dwBaseOfImage)
+		{
+			return moduleInfo.modBaseSize;
+		}
+	} while (Module32Next(hModuleSnap, &moduleInfo));
+
+	return 0;
+}
+
+void dump()
+{
+	DWORD dwSize;
+	DWORD dwRead;
+	dwSize = getImageRange();
+	if (dwSize == 0)
+	{
+		printf("[!]获取模块信息失败!\n");
+		return;
+	}
+	char *buff = new char[dwSize];
+	ReadProcessMemory(hProcess, (LPVOID)dwBaseOfImage, buff, dwSize, &dwRead);
+	printf("%s\n", buff);
+
+	HANDLE hFile;
+	hFile = CreateFile(L"Mydump.dmp", 
+					GENERIC_WRITE, 
+					FILE_SHARE_READ, 
+					NULL,
+					CREATE_NEW, 
+					FILE_ATTRIBUTE_NORMAL,
+					NULL);
+	DWORD dwDataLen;
+	WriteFile(hFile, buff, dwSize, &dwDataLen, NULL);
+	printf("Size:%x  --  Written:%x\n", dwSize, dwDataLen);
+	CloseHandle(hFile);
+	delete[] buff;
 }
 
 void displayModeByte(LPVOID addr, char* buff)
