@@ -1509,7 +1509,7 @@ void getAddressInfo(DWORD addr)
 	{
 		DWORD dwBase = GetSymAddress(pszName.c_str());
 		DWORD dwLine = getAsmLineNum(dwBase, addr - dwBase);
-		printf("%08x\t%s +%d行\n", addr,pszName.c_str(), dwLine+1);
+		printf("%08x|\t%s +%d行\n", addr,pszName.c_str(), dwLine+1);
 	}
 }
 
@@ -1517,6 +1517,9 @@ void stackBacktracking()
 {
 	DWORD* buff = new DWORD[2];
 
+	printf("EBP\t|地址 \t |\t信息\n");
+
+	printf("%08x|", ct.Ebp);
 	// 首先获取当前的
 	getAddressInfo(ct.Eip);
 
@@ -1531,6 +1534,7 @@ void stackBacktracking()
 
 	do 
 	{
+		printf("%08x|", buff[0]);
 		getAddressInfo(buff[1]);
 		ReadProcessMemory(OpenProcess(PROCESS_ALL_ACCESS, FALSE, de.dwProcessId),
 			(LPVOID)buff[0],
